@@ -13,8 +13,10 @@ One-command build (recommended)
 --------------------------------
 
 build.ps1 builds both the portable exe and the installer in one go, reading
-the version number from version.txt automatically:
+the version number from version.txt automatically. Run it from inside the
+project folder (the same folder as launcher.py, version.txt, etc.):
 
+    cd custom-program-launcher   (or wherever you cloned/downloaded it to)
     Unblock-File .\build.ps1   (first time only - Windows blocks scripts downloaded from the internet)
     .\build.ps1
 
