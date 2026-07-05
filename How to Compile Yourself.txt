@@ -1,0 +1,63 @@
+How to Compile Yourself
+========================
+
+Requires Python 3.13+ and Inno Setup 6 (https://jrsoftware.org/isdl.php) if you
+want to build the installer, not just the portable exe.
+
+    git clone https://github.com/Vulkandr/custom-program-launcher.git
+    cd custom-program-launcher
+    pip install pyinstaller sv-ttk pywinstyles --break-system-packages
+
+
+One-command build (recommended)
+--------------------------------
+
+build.ps1 builds both the portable exe and the installer in one go, reading
+the version number from version.txt automatically:
+
+    Unblock-File .\build.ps1   (first time only - Windows blocks scripts downloaded from the internet)
+    .\build.ps1
+
+Both files land in Installer_Output\v<version>\.
+
+If Inno Setup is installed somewhere other than the default location, pass
+its path:
+
+    .\build.ps1 -InnoCompiler "D:\Some\Other\Path\ISCC.exe"
+
+
+Manual build
+------------
+
+To build just the portable exe yourself:
+
+    pyinstaller --onefile --windowed --name "ProgramLauncher" --icon="app_icon.ico" --add-data "app_icon.ico;." --add-data "version.txt;." --add-data "<path-to-sv_ttk-package>;sv_ttk" launcher.py
+
+(Find your sv_ttk package path with:
+python -c "import sv_ttk, os; print(os.path.dirname(sv_ttk.__file__))")
+
+To build just the installer, open CPL_installer.iss in Inno Setup Compiler
+and press Compile (F9).
+
+
+Releasing a new version
+------------------------
+
+version.txt is the single source of truth for the version number: both the
+app (shown in Settings > Version) and the installer read from it, so you
+only ever update it in one place.
+
+1. Update version.txt with the new version number
+2. Run .\build.ps1
+3. Attach the resulting files from Installer_Output\v<version>\ to a new
+   GitHub Release
+
+
+Project Structure
+------------------
+
+launcher.py          Main application source
+app_icon.ico         App icon (multi-resolution)
+version.txt          Single source of truth for version number
+CPL_installer.iss    Inno Setup installer script
+build.ps1            Builds both the portable exe and the installer in one command

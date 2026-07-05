@@ -39,7 +39,7 @@ APP_VERSION = _load_app_version()
 
 # Once the GitHub repo exists, set this to its URL (e.g. "https://github.com/yourname/your-repo")
 # and the "Version" item in the Settings menu will open it. Leave as None until then.
-REPO_URL = None
+REPO_URL = "https://github.com/Vulkandr/custom-program-launcher"
 
 
 def open_repo_link():
@@ -127,7 +127,7 @@ class ProgramLauncherApp:
         self.theme = get_windows_theme()
 
         # Settings (persisted alongside the program lists)
-        self.settings = {"start_on_boot": False, "close_after_launch": False}
+        self.settings = {"start_on_boot": False, "close_after_launch": False, "default_delay": 3.0}
         self.start_on_boot_var = tk.BooleanVar(value=False)
         self.close_after_launch_var = tk.BooleanVar(value=False)
 
@@ -179,11 +179,31 @@ class ProgramLauncherApp:
             command=self.toggle_close_after_launch,
         )
         settings_menu.add_separator()
+        settings_menu.add_command(label=self._default_delay_label(), command=self.edit_default_delay)
+        self.settings_menu = settings_menu
+        self._default_delay_menu_index = settings_menu.index("end")
+        settings_menu.add_separator()
         settings_menu.add_command(label="More Settings...", command=self.open_settings_window)
         settings_menu.add_separator()
         settings_menu.add_command(label=f"Version {APP_VERSION}", command=open_repo_link)
 
         return settings_menu
+
+    def _default_delay_label(self):
+        return f"Default Delay: {self.settings.get('default_delay', 3.0):.1f}s"
+
+    def edit_default_delay(self):
+        new_delay = simpledialog.askfloat(
+            "Default Delay",
+            "Default delay (in seconds) to pre-fill when adding a new program:",
+            initialvalue=self.settings.get("default_delay", 3.0),
+            minvalue=0.0,
+        )
+        if new_delay is None:
+            return
+        self.settings["default_delay"] = new_delay
+        self.settings_menu.entryconfigure(self._default_delay_menu_index, label=self._default_delay_label())
+        self._save_config()
 
     def toggle_start_on_boot(self):
         enabled = self.start_on_boot_var.get()
@@ -295,6 +315,7 @@ class ProgramLauncherApp:
                     self.settings = {
                         "start_on_boot": False,
                         "close_after_launch": False,
+                        "default_delay": 3.0,
                         **data.get("settings", {}),
                     }
                 elif isinstance(data, list):
@@ -575,7 +596,7 @@ class ProgramLauncherApp:
             chosen_name = listbox.get(sel[0])
             chosen_path = name_to_path[chosen_name]
             picker.destroy()
-            self._prompt_delay_and_add(chosen_name, chosen_path)
+            self.root.after(150, lambda: self._prompt_delay_and_add(chosen_name, chosen_path))
 
         listbox.bind("<Double-Button-1>", confirm_selection)
         search_entry.bind("<Return>", confirm_selection)
@@ -586,14 +607,15 @@ class ProgramLauncherApp:
         ttk.Button(btn_row, text="Cancel", command=picker.destroy).pack(side="left", expand=True, fill="x")
 
     def _prompt_delay_and_add(self, name, path):
+        default_delay = self.settings.get("default_delay", 3.0)
         delay = simpledialog.askfloat(
             "Delay",
-            f"Delay in seconds before launching '{name}'\n"
-            f"(time to wait after the previous program before this one starts):",
-            initialvalue=3.0, minvalue=0.0,
+            f"Delay in seconds to wait after launching '{name}'\n"
+            f"(gives it time to boot up before moving to the next program):",
+            initialvalue=default_delay, minvalue=0.0,
         )
         if delay is None:
-            delay = 3.0
+            delay = default_delay
         self.programs.append({"name": name, "path": path, "delay": delay})
         self._refresh_tree()
         self._save_config()
@@ -608,7 +630,7 @@ class ProgramLauncherApp:
             return
 
         name = os.path.splitext(os.path.basename(path))[0]
-        self._prompt_delay_and_add(name, path)
+        self.root.after(150, lambda: self._prompt_delay_and_add(name, path))
 
     def _get_selected_index(self):
         sel = self.tree.selection()
@@ -651,7 +673,7 @@ class ProgramLauncherApp:
         entry = self.programs[idx]
         delay = simpledialog.askfloat(
             "Edit Delay",
-            f"Delay in seconds before launching '{entry['name']}':",
+            f"Delay in seconds to wait after launching '{entry['name']}':",
             initialvalue=entry["delay"], minvalue=0.0,
         )
         if delay is not None:
@@ -673,20 +695,21 @@ class ProgramLauncherApp:
             delay = entry["delay"]
             name = entry["name"]
 
-            if delay > 0:
-                remaining = delay
-                while remaining > 0:
-                    self._set_status(f"[{i}/{total}] Waiting {remaining:.1f}s before launching '{name}'...")
-                    step = 0.1 if remaining >= 0.1 else remaining
-                    time.sleep(step)
-                    remaining -= step
-
             self._set_status(f"[{i}/{total}] Launching '{name}'...")
             try:
                 os.startfile(entry["path"])
             except Exception as e:
                 self._set_status(f"[{i}/{total}] Failed to launch '{name}': {e}")
                 time.sleep(2)
+                continue
+
+            if delay > 0:
+                remaining = delay
+                while remaining > 0:
+                    self._set_status(f"[{i}/{total}] Waiting {remaining:.1f}s after launching '{name}'...")
+                    step = 0.1 if remaining >= 0.1 else remaining
+                    time.sleep(step)
+                    remaining -= step
 
         self._set_status("Done. All programs launched.")
         self.root.after(0, lambda: self.launch_btn.config(state="normal"))
