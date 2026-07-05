@@ -18,7 +18,21 @@ except ImportError:
 import sv_ttk
 import pywinstyles
 
-CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".program_launcher_config.json")
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), "Documents")
+CONFIG_FILE = os.path.join(CONFIG_DIR, ".program_launcher_config.json")
+_OLD_CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".program_launcher_config.json")
+
+
+def _migrate_old_config():
+    """One-time migration: earlier versions stored the config directly in the user
+    folder. Move it into Documents if it hasn't been migrated already."""
+    if os.path.exists(CONFIG_FILE) or not os.path.exists(_OLD_CONFIG_FILE):
+        return
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        os.replace(_OLD_CONFIG_FILE, CONFIG_FILE)
+    except OSError:
+        pass  # Not critical - worst case the app just starts fresh in the new location
 
 
 def resource_path(relative_path):
@@ -305,6 +319,8 @@ class ProgramLauncherApp:
 
     # ---------- Config persistence ----------
     def _load_config(self):
+        _migrate_old_config()
+
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -342,6 +358,7 @@ class ProgramLauncherApp:
     def _save_config(self):
         self.lists[self.current_list_name] = self.programs
         try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(
                     {"last_list": self.current_list_name, "lists": self.lists, "settings": self.settings},
@@ -721,6 +738,36 @@ class ProgramLauncherApp:
         self.root.after(0, lambda: self.status_var.set(text))
 
 
+def set_window_icon(window, ico_path):
+    """Set the window's title bar and taskbar/Alt-Tab icons directly via the Windows API.
+
+    Tkinter's built-in iconbitmap() on Windows tends to grab a single frame from the
+    .ico file and stretch it for every context, which looks blurry in the taskbar even
+    when the .ico file itself contains larger sizes. Loading each size explicitly and
+    sending WM_SETICON avoids that.
+    """
+    try:
+        import ctypes
+        window.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+
+        LR_LOADFROMFILE = 0x00000010
+        IMAGE_ICON = 1
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
+
+        hicon_small = ctypes.windll.user32.LoadImageW(0, ico_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+        hicon_big = ctypes.windll.user32.LoadImageW(0, ico_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+
+        if hicon_small:
+            ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+        if hicon_big:
+            ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
+    except Exception:
+        pass  # Not on Windows, or something went wrong - not critical
+
+
 def main():
     try:
         import ctypes
@@ -732,9 +779,11 @@ def main():
     root.title("Custom Program Launcher")
 
     try:
-        root.iconbitmap(resource_path("app_icon.ico"))
+        root.iconbitmap(resource_path("app_icon.ico"))  # fallback for non-Windows/edge cases
     except Exception:
         pass  # Icon file not found - not critical, app still runs fine
+
+    set_window_icon(root, resource_path("app_icon.ico"))
 
     theme = get_windows_theme()
     sv_ttk.set_theme(theme)
