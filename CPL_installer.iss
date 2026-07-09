@@ -1,7 +1,8 @@
 ; Custom Program Launcher - Inno Setup installer script
 ;
 ; HOW TO USE:
-;   1. Build ProgramLauncher.exe with PyInstaller as usual (dist\ProgramLauncher.exe).
+;   1. Build the app with PyInstaller in --onedir mode: dist\installer\ProgramLauncher\
+;      (build.ps1 does this automatically, alongside the separate --onefile portable build)
 ;   2. Open this file in Inno Setup Compiler and press Compile (or F9).
 ;   3. The finished installer appears in the "Installer_Output" folder.
 ;
@@ -9,8 +10,8 @@
 ;   - Edit version.txt (in this same folder) to the new version number, e.g. "1.1.0".
 ;     This one file is the single source of truth - launcher.py reads it too (shown in
 ;     the Settings menu), so the app and installer will always report the same version.
-;   - Rebuild ProgramLauncher.exe with PyInstaller (make sure version.txt is still bundled
-;     via --add-data, same as app_icon.ico).
+;   - Rebuild with PyInstaller (make sure version.txt is still bundled via --add-data,
+;     same as app_icon.ico).
 ;   - Never change MyAppId - that's what lets a new installer recognize and cleanly
 ;     upgrade an existing install instead of creating a duplicate/second copy.
 ;   - Recompile this script. Give the new Setup exe to anyone who has an older version
@@ -54,7 +55,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\installer\ProgramLauncher\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
