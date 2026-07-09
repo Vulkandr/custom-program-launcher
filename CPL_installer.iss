@@ -54,6 +54,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
+[InstallDelete]
+; Wipe the old _internal folder before copying the new one in. Without this,
+; files that existed in an older version's onedir build but aren't part of a
+; newer one would just be left behind forever, since Inno Setup only adds/
+; overwrites files listed in [Files] - it never removes stale ones on its own.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "dist\installer\ProgramLauncher\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
