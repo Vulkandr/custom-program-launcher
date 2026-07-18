@@ -45,6 +45,14 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Automatically closes the app if it's already running (e.g. during an upgrade),
 ; since Windows won't let us overwrite a running exe.
+;
+; CloseApplicationsFilter is narrowed to just *.exe: by default Inno also checks
+; every bundled .dll for locks, but many of our onedir build's DLLs (OpenSSL,
+; Tcl/Tk, sqlite3, etc.) share filenames with DLLs bundled by totally unrelated
+; apps. Windows' Restart Manager matches by filename system-wide, so without this
+; it flags unrelated running programs as "needing to close" even though they're
+; not actually touching our files. We only ever need to check our own exe.
+CloseApplicationsFilter=*.exe
 CloseApplications=force
 RestartApplications=no
 
@@ -71,3 +79,17 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  // Windows can briefly keep a DLL's underlying file locked for a moment after the
+  // process using it has fully closed (part of how it unmaps loaded DLL images
+  // internally) - this doesn't show up as an open handle in Task Manager or Resource
+  // Monitor, so it can't be detected/waited-out cleanly. A short pause here, right
+  // before file copying starts (and after CloseApplications has already closed the
+  // app if it was running), gives that enough time to clear on its own and avoids
+  // "Access is denied" errors on files like VCRUNTIME140.dll during an upgrade.
+  if CurStep = ssInstall then
+    Sleep(3000);
+end;

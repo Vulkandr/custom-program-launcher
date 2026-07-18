@@ -69,10 +69,14 @@ STARTUP_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
 def _get_startup_command():
-    """Build the command line to launch this app, whether running as a script or a frozen exe."""
+    """Build the command line to launch this app, whether running as a script or a frozen exe.
+
+    Appends --autostart so the app can tell a Windows-startup launch apart from someone
+    manually opening it - used to gate the auto-launch-a-profile feature to startup only.
+    """
     if getattr(sys, "frozen", False):
-        return f'"{sys.executable}"'
-    return f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+        return f'"{sys.executable}" --autostart'
+    return f'"{sys.executable}" "{os.path.abspath(__file__)}" --autostart'
 
 
 def set_startup_enabled(enabled):
@@ -141,9 +145,15 @@ class ProgramLauncherApp:
         self.theme = get_windows_theme()
 
         # Settings (persisted alongside the program lists)
-        self.settings = {"start_on_boot": False, "close_after_launch": False, "default_delay": 3.0}
+        self.settings = {
+            "start_on_boot": False,
+            "close_after_launch": False,
+            "default_delay": 3.0,
+            "autostart_list": None,  # name of the list to auto-launch on Windows startup, if any
+        }
         self.start_on_boot_var = tk.BooleanVar(value=False)
         self.close_after_launch_var = tk.BooleanVar(value=False)
+        self.autostart_list_var = tk.BooleanVar(value=False)
 
         # State for the hover-scroll effect on long Path values
         self._marquee_item = None
@@ -262,6 +272,11 @@ class ProgramLauncherApp:
         self.list_combo.pack(side="left", padx=(5, 10))
         self.list_combo.bind("<<ComboboxSelected>>", self.on_list_selected)
 
+        ttk.Checkbutton(
+            list_frame, text="Auto-launch on startup",
+            variable=self.autostart_list_var, command=self.toggle_autostart_list,
+        ).pack(side="left", padx=(0, 10))
+
         settings_btn = ttk.Menubutton(top_row, text="Settings", menu=settings_menu)
         settings_btn.grid(row=0, column=2, sticky="e")
 
@@ -332,6 +347,7 @@ class ProgramLauncherApp:
                         "start_on_boot": False,
                         "close_after_launch": False,
                         "default_delay": 3.0,
+                        "autostart_list": None,
                         **data.get("settings", {}),
                     }
                 elif isinstance(data, list):
@@ -353,6 +369,7 @@ class ProgramLauncherApp:
         # Sync the menu checkboxes and the actual startup registry entry to the saved setting
         self.start_on_boot_var.set(self.settings.get("start_on_boot", False))
         self.close_after_launch_var.set(self.settings.get("close_after_launch", False))
+        self._refresh_autostart_checkbox()
         set_startup_enabled(self.settings.get("start_on_boot", False))
 
     def _save_config(self):
@@ -466,8 +483,19 @@ class ProgramLauncherApp:
         self.current_list_name = selected
         self.programs = self.lists[self.current_list_name]
         self._refresh_tree()
+        self._refresh_autostart_checkbox()
         self._save_config()
         self.status_var.set(f"Switched to list '{self.current_list_name}'.")
+
+    def _refresh_autostart_checkbox(self):
+        self.autostart_list_var.set(self.settings.get("autostart_list") == self.current_list_name)
+
+    def toggle_autostart_list(self):
+        if self.autostart_list_var.get():
+            self.settings["autostart_list"] = self.current_list_name
+        elif self.settings.get("autostart_list") == self.current_list_name:
+            self.settings["autostart_list"] = None
+        self._save_config()
 
     def new_list(self):
         name = simpledialog.askstring("New List", "Name for the new list:")
@@ -484,6 +512,7 @@ class ProgramLauncherApp:
         self.programs = self.lists[name]
         self._refresh_list_combo()
         self._refresh_tree()
+        self._refresh_autostart_checkbox()
         self._save_config()
 
     def save_list_as(self):
@@ -502,6 +531,7 @@ class ProgramLauncherApp:
         self.programs = self.lists[name]
         self._refresh_list_combo()
         self._refresh_tree()
+        self._refresh_autostart_checkbox()
         self._save_config()
 
     def rename_list(self):
@@ -515,8 +545,11 @@ class ProgramLauncherApp:
             messagebox.showerror("Error", f"A list named '{new_name}' already exists.")
             return
         self.lists[new_name] = self.lists.pop(self.current_list_name)
+        if self.settings.get("autostart_list") == self.current_list_name:
+            self.settings["autostart_list"] = new_name
         self.current_list_name = new_name
         self._refresh_list_combo()
+        self._refresh_autostart_checkbox()
         self._save_config()
 
     def delete_list(self):
@@ -526,10 +559,13 @@ class ProgramLauncherApp:
         if not messagebox.askyesno("Delete List", f"Delete the list '{self.current_list_name}'? This can't be undone."):
             return
         del self.lists[self.current_list_name]
+        if self.settings.get("autostart_list") == self.current_list_name:
+            self.settings["autostart_list"] = None
         self.current_list_name = next(iter(self.lists))
         self.programs = self.lists[self.current_list_name]
         self._refresh_list_combo()
         self._refresh_tree()
+        self._refresh_autostart_checkbox()
         self._save_config()
 
     # ---------- Installed program scanning ----------
@@ -706,15 +742,70 @@ class ProgramLauncherApp:
         self.launch_btn.config(state="disabled")
         threading.Thread(target=self._launch_sequence, daemon=True).start()
 
-    def _launch_sequence(self):
-        total = len(self.programs)
-        for i, entry in enumerate(self.programs, start=1):
+    @staticmethod
+    def _launch_program(path):
+        """Launch a program isolated from CPL's own environment.
+
+        Root cause of launched programs locking CPL's DLLs: PyInstaller's bootloader
+        calls SetDllDirectory() pointing at our _internal folder so bundled Python can
+        find its DLLs - and per Microsoft's docs, that setting is INHERITED by child
+        processes, putting _internal into their DLL search path ahead of System32.
+        Launched apps then resolve VCRUNTIME140.dll etc. from our folder and keep them
+        locked for as long as they run, blocking CPL updates/uninstalls.
+
+        Fix: temporarily reset the DLL directory to the system default right before
+        spawning the child, then restore it afterward so our own process is unaffected.
+        """
+        workdir = os.path.dirname(path) or None
+
+        # Strip PyInstaller-injected variables from the environment the child inherits
+        env = os.environ.copy()
+        for var in ("_MEIPASS2", "_PYI_APPLICATION_HOME_DIR", "_PYI_ARCHIVE_FILE",
+                    "_PYI_PARENT_PROCESS_LEVEL", "PYINSTALLER_RESET_ENVIRONMENT"):
+            env.pop(var, None)
+
+        kernel32 = None
+        restore_dir = None
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            if getattr(sys, "frozen", False):
+                restore_dir = getattr(sys, "_MEIPASS", None)
+            # Reset to default DLL search order so the child doesn't inherit _internal
+            kernel32.SetDllDirectoryW(None)
+        except Exception:
+            kernel32 = None
+
+        try:
+            # 'start' via the shell handles .lnk shortcuts and .exe files alike, and fully
+            # detaches the child from our process. First quoted arg is the window title
+            # (intentionally empty), second is the target.
+            subprocess.Popen(
+                f'start "" "{path}"',
+                shell=True,
+                cwd=workdir,
+                env=env,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        finally:
+            # Restore PyInstaller's DLL directory for our own process
+            if kernel32 is not None and restore_dir:
+                try:
+                    kernel32.SetDllDirectoryW(restore_dir)
+                except Exception:
+                    pass
+
+    def _launch_sequence(self, programs=None):
+        if programs is None:
+            programs = self.programs
+        total = len(programs)
+        for i, entry in enumerate(programs, start=1):
             delay = entry["delay"]
             name = entry["name"]
 
             self._set_status(f"[{i}/{total}] Launching '{name}'...")
             try:
-                os.startfile(entry["path"])
+                self._launch_program(entry["path"])
             except Exception as e:
                 self._set_status(f"[{i}/{total}] Failed to launch '{name}': {e}")
                 time.sleep(2)
@@ -736,6 +827,84 @@ class ProgramLauncherApp:
 
     def _set_status(self, text):
         self.root.after(0, lambda: self.status_var.set(text))
+
+    # ---------- Autostart (launch a specific list on Windows startup only) ----------
+    def maybe_run_autostart_sequence(self):
+        """Called only when the app was launched via the Windows startup mechanism
+        (--autostart on the command line), never for a manual launch."""
+        list_name = self.settings.get("autostart_list")
+        if not list_name or list_name not in self.lists or not self.lists[list_name]:
+            return
+        self._show_autostart_countdown(list_name)
+
+    def _show_autostart_countdown(self, list_name, seconds=5):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Auto-Launch")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        style_titlebar(dialog, self.theme)
+
+        frame = ttk.Frame(dialog, padding=24)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame, text=f"Auto-launching list:\n\"{list_name}\"",
+            font=("Segoe UI", 14, "bold"), justify="center",
+        ).pack(pady=(4, 10))
+
+        countdown_var = tk.StringVar()
+        ttk.Label(frame, textvariable=countdown_var, font=("Segoe UI", 56, "bold")).pack(pady=(0, 10))
+
+        ttk.Label(frame, text="Click Cancel to stop this.", font=("Segoe UI", 10)).pack(pady=(0, 16))
+
+        state = {"cancelled": False}
+
+        def do_cancel():
+            state["cancelled"] = True
+            dialog.destroy()
+
+        ttk.Button(frame, text="Cancel", style="Accent.TButton", command=do_cancel).pack(ipadx=24, ipady=8)
+        dialog.protocol("WM_DELETE_WINDOW", do_cancel)
+
+        # Size the dialog to its contents (correct at any DPI scaling, so nothing gets
+        # clipped) and center on screen. winfo_reqwidth/reqheight report the layout's
+        # requested size, which is reliable before the window is mapped - unlike
+        # winfo_width/height, which can return bogus values during the busy boot phase
+        # (that's what was pushing this to the top-left corner before).
+        dialog.update_idletasks()
+        w = dialog.winfo_reqwidth()
+        h = dialog.winfo_reqheight()
+        x = (dialog.winfo_screenwidth() - w) // 2
+        y = (dialog.winfo_screenheight() - h) // 2
+        dialog.geometry(f"{w}x{h}+{x}+{y}")
+        # Re-assert shortly after mapping, in case anything (window manager, DPI
+        # adjustment) moved it during initial display
+        dialog.after(50, lambda: dialog.geometry(f"{w}x{h}+{x}+{y}"))
+
+        dialog.lift()
+        dialog.attributes("-topmost", True)
+        dialog.after(200, lambda: dialog.attributes("-topmost", False))
+        dialog.grab_set()
+        dialog.focus_force()
+
+        def tick(remaining):
+            if state["cancelled"]:
+                return
+            if remaining <= 0:
+                dialog.destroy()
+                self._run_autostart_launch(list_name)
+                return
+            countdown_var.set(str(remaining))
+            dialog.after(1000, lambda: tick(remaining - 1))
+
+        tick(seconds)
+
+    def _run_autostart_launch(self, list_name):
+        programs = self.lists.get(list_name, [])
+        if not programs:
+            return
+        self.launch_btn.config(state="disabled")
+        threading.Thread(target=self._launch_sequence, args=(list(programs),), daemon=True).start()
 
 
 def set_window_icon(window, ico_path):
@@ -790,6 +959,9 @@ def main():
 
     app = ProgramLauncherApp(root)
     style_titlebar(root, theme)
+
+    if "--autostart" in sys.argv:
+        root.after(600, app.maybe_run_autostart_sequence)
 
     root.mainloop()
 
