@@ -12,6 +12,7 @@ A lightweight Windows app for launching a sequence of programs, each with its ow
 - **Add programs two ways:** pick from a list of your installed programs, or browse to any `.exe`/`.lnk` manually through the file browser
 - **Configurable delay per program:** after each program launches, it waits your chosen number of seconds (giving it time to boot) before moving to the next one
 - **Multiple named lists:** save different setups (e.g. "Streaming," "Gaming," "Work") and switch between them instantly
+- **Auto-launch on startup:** mark a list to launch automatically when Windows starts, with a 5 second countdown you can cancel before it runs
 - **Matches Windows light and dark mode**
 - **Remembers your lists and settings between sessions**
 - **Settings menu**
@@ -30,7 +31,8 @@ Grab the latest release from the [Releases page](https://github.com/Vulkandr/cus
 3. Reorder with **Move Up** / **Move Down** if needed
 4. Click **Launch All** to fire off the whole sequence
 5. Use **New List** / **Duplicate As...** / **Rename** / **Delete List** to manage multiple setups
-6. Click **Settings** (top right) for startup/auto-close options and to set your preferred default delay when adding a new program
+6. Check **Auto-launch on startup** (next to the list picker) to have the selected list launch automatically when Windows starts (requires *Open on Startup* to be enabled in Settings)
+7. Click **Settings** (top right) for startup/auto-close options and to set your preferred default delay when adding a new program
 
 ## License
 
