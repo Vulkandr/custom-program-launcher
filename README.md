@@ -1,6 +1,6 @@
 # Custom Program Launcher
 
-A lightweight Windows app for launching a sequence of programs, each with its own configurable delay: handy for firing up your whole streaming, gaming, or work setup with a single click instead of opening everything by hand.
+A lightweight Windows app for launching a sequence of programs and scripts, each with its own timing and startup behavior: handy for firing up your whole streaming, gaming, or work setup with a single click instead of opening everything by hand.
 
 ![Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![License](https://img.shields.io/badge/license-MPL--2.0-orange)
@@ -9,15 +9,15 @@ A lightweight Windows app for launching a sequence of programs, each with its ow
 
 ## Features
 
-- **Add programs two ways:** pick from a list of your installed programs, or browse to any `.exe`/`.lnk` manually through the file browser
-- **Configurable delay per program:** after each program launches, it waits your chosen number of seconds (giving it time to boot) before moving to the next one
+- **Add things three ways:** pick from a list of your installed programs, browse to any file through the file browser, or write a PowerShell or Command Prompt script to run directly
+- **Control the timing per item:** continue immediately, wait a set number of seconds, wait until the program's window appears, or wait for the window and then a few extra seconds
+- **Control how each program starts:** normally, minimized to the taskbar, or with its window closed (which sends apps like Discord straight to the system tray)
+- **Command-line arguments per program**
 - **Multiple named lists:** save different setups (e.g. "Streaming," "Gaming," "Work") and switch between them instantly
+- **Auto-launch on startup:** mark a list to launch automatically when Windows starts, with a 5 second countdown you can cancel before it runs
+- **Drag and drop to reorder**, and right-click any item to launch just that one, rename it, duplicate it, or open its folder
 - **Matches Windows light and dark mode**
 - **Remembers your lists and settings between sessions**
-- **Settings menu**
-  - *Open on Startup:* launches with Windows (cleanly reversible, just a registry entry)
-  - *Close After Launch All:* auto-closes once every program has been launched
-  - *Default Delay:* set what new programs pre-fill with, instead of always retyping the same number
 
 ## Download
 
@@ -25,12 +25,14 @@ Grab the latest release from the [Releases page](https://github.com/Vulkandr/cus
 
 ## Usage
 
-1. Open the app and click **Choose Installed Program** or **Browse for File...** to add a program
-2. Set the delay (in seconds) for how long it should wait after that program launches before moving to the next one
-3. Reorder with **Move Up** / **Move Down** if needed
+1. Add something with **Choose Program**, **Browse for File...**, or **Add Script...**
+2. Set its Launch Options: arguments, how long to wait before continuing, and how the program should start
+3. Drag items to reorder them, or use **Move Up** / **Move Down**
 4. Click **Launch All** to fire off the whole sequence
-5. Use **New List** / **Duplicate As...** / **Rename** / **Delete List** to manage multiple setups
-6. Click **Settings** (top right) for startup/auto-close options and to set your preferred default delay when adding a new program
+5. Right-click any item to launch just that one, which is a quick way to test a script
+6. Use **New List** / **Duplicate As...** / **Rename** / **Delete List** to manage multiple setups
+7. Check **Auto-launch on startup** (top left) to have the selected list launch automatically when Windows starts (requires *Open on Startup* to be enabled in Settings)
+8. Open **Settings** (top right) for startup options, auto-close after launching, and your preferred default delay for new items
 
 ## License
 
